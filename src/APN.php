@@ -11,7 +11,7 @@
  * @license GNU General Public License v3.0
  */
 
-
+use Exception;
 
 class APN
 {
@@ -23,15 +23,9 @@ class APN
    */
   public static function getNormalizedPNG(string $imagePath): ?string
   {
-    $pngheader = "\x89PNG\r\n\x1a\n";
-
     $file = fopen($imagePath, "rb");
     $oldPNG = fread($file, filesize($imagePath));
     fclose($file);
-
-    if (substr($oldPNG, 0, 8) !== $pngheader) {
-      return null;
-    }
 
     $newPNG = substr($oldPNG, 0, 8);
 
@@ -72,8 +66,7 @@ class APN
           $bufSize = $width * $height * 4 + $height;
           $chunkData = zlib_decode($idatAcc, $bufSize);
         } catch (Exception $e) {
-          echo $e->getMessage();
-          return null;
+          throw new Exception($e->getMessage());
         }
 
         $chunkType = "IDAT";
@@ -117,12 +110,27 @@ class APN
         }
         $newPNG .= pack("N", $chunkCRC);
       }
- 
+
       if ($breakLoop) {
         break;
       }
     }
     return $newPNG;
+  }
+
+  /**
+   * Check if the file at the given path is a PNG image.
+   *
+   * @param string $imagePath Path to the PNG image file.
+   * @return bool True if the file is a PNG image, false otherwise.
+   */
+  private static function isPNG(string $imagePath): bool
+  {
+    $file = fopen($imagePath, 'rb');
+    $header = fread($file, 8);
+    fclose($file);
+
+    return ($header === "\x89PNG\r\n\x1a\n");
   }
 
   /**
@@ -133,13 +141,26 @@ class APN
    */
   public static function updatePNG(string $imagePath): bool
   {
-    $data = APN::getNormalizedPNG($imagePath);
-    if ($data !== null) {
-      $file = fopen($imagePath, "wb");
-      fwrite($file, $data);
-      fclose($file);
-      return true;
+    if (!self::isPNG($imagePath)) {
+      return false; // Not a PNG file, no conversion needed
     }
-    return false;
+
+    $file = fopen($imagePath, 'rb');
+    $fileContents = fread($file, filesize($imagePath));
+    fclose($file);
+
+    if (strpos($fileContents, 'CgBI') === false) {
+      return false; // CgBI chunk not found, no conversion needed
+    }
+
+    $newData = self::getNormalizedPNG($imagePath);
+    if ($newData !== null) {
+      $file = fopen($imagePath, 'wb');
+      fwrite($file, $newData);
+      fclose($file);
+      return true; // Successfully converted and updated the PNG file
+    }
+
+    return false; // Failed to convert the PNG file
   }
 }
